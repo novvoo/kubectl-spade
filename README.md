@@ -51,7 +51,7 @@ kubectl spade --pod <POD_NAME> --image <SOURCE_IMAGE> [OPTIONS]
 - `--pod`: 目标 Pod 名称（必需）
 - `--namespace`: Pod 所在的命名空间（默认: default）
 - `--image`: 要在目标节点拉取的源镜像（必需）
-- `--container`: 当 Pod 有多个容器时，指定要替换的容器（容器名或索引）
+- `--container-image`: 当 Pod 有多个容器时，指定要替换的容器镜像（容器名、索引或部分镜像名）
 - `--image-pull-secret`: 用于拉取镜像的 Secret 名称（可选）
 - `--debug-image`: 用于调试的镜像（默认: mcr.microsoft.com/cbl-mariner/busybox:2.0）
 - `--timeout`: 超时时间，单位秒（默认: 180）
@@ -72,13 +72,26 @@ kubectl spade --pod my-pod --image registry.example.com/my-app:v1.0.0
 kubectl spade --pod my-pod --image private-registry.com/app:v2.0.0 --image-pull-secret my-registry-secret
 ```
 
-3. **指定命名空间和容器**
+3. **指定命名空间和容器镜像**
 
 ```bash
-kubectl spade --pod my-pod --namespace production --image new-image:v1.0.0 --container app-container
+kubectl spade --pod my-pod --namespace production --image new-image:v1.0.0 --container-image app-container-image
 ```
 
-4. **预览模式**
+4. **支持 Init Containers**
+
+```bash
+# 指定 init container 的索引（init containers 在列表前面）
+kubectl spade --pod my-pod --image new-image:v1.0.0 --container-image 0
+
+# 指定 init container 的名称
+kubectl spade --pod my-pod --image new-image:v1.0.0 --container-image init-container-image
+
+# 通过镜像名的一部分匹配容器
+kubectl spade --pod my-pod --image new-image:v1.0.0 --container-image "nginx"
+```
+
+5. **预览模式**
 
 ```bash
 kubectl spade --pod my-pod --image my-image:v1.0.0 --dry-run

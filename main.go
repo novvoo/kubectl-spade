@@ -42,7 +42,7 @@ func main() {
 	flag.StringVar(&sourceImage, "image", "", "要在目标节点 pull 的源镜像（必需）")
 	flag.IntVar(&timeoutSeconds, "timeout", 180, "超时时间（秒）")
 	flag.StringVar(&secretName, "image-pull-secret", "", "（可选）imagePullSecret 名（类型建议 kubernetes.io/dockerconfigjson），以只读 volume 挂载到容器内并在容器内即时清理")
-	flag.StringVar(&containerSel, "container", "", "当 Pod 有多个容器时，指定要替换的容器（容器名或索引）")
+	flag.StringVar(&containerSel, "container-image", "", "当 Pod 有多个容器时，指定要替换的容器镜像（容器名、索引或部分镜像名）")
 	flag.StringVar(&debugImage, "debug-image", "mcr.microsoft.com/cbl-mariner/busybox:2.0", "用于调试的镜像（须支持 sh/chroot/base64/sed/grep）")
 	flag.BoolVar(&dryRun, "dry-run", false, "仅打印将要执行的 shell 脚本和 Pod spec（YAML），不在集群中创建资源")
 
@@ -92,7 +92,7 @@ func main() {
 
 	targetImage, err := pickTargetImage(pod, containerSel)
 	if err != nil {
-		exitf("选择目标 container 失败: %v", err)
+		exitf("选择目标容器镜像失败: %v", err)
 	}
 	fmt.Printf("source image: %s -> target image (pod container): %s\n", sourceImage, targetImage)
 
@@ -327,38 +327,46 @@ func buildCtrDebugPodNoCred(name, namespace, nodeName, debugImage, cmd string) *
 
 // ---------- helpers ----------
 func pickTargetImage(pod *corev1.Pod, containerSel string) (string, error) {
-	containers := pod.Spec.Containers
-	if len(containers) == 0 {
-		return "", errors.New("pod 没有容器")
+	// 合并普通容器和 init 容器
+	allContainers := make([]corev1.Container, 0)
+	allContainers = append(allContainers, pod.Spec.InitContainers...)
+	allContainers = append(allContainers, pod.Spec.Containers...)
+
+	if len(allContainers) == 0 {
+		return "", errors.New("pod 没有容器（包括 init containers）")
 	}
-	if len(containers) == 1 {
-		return containers[0].Image, nil
+	if len(allContainers) == 1 {
+		return allContainers[0].Image, nil
 	}
 	if containerSel == "" {
 		var b strings.Builder
-		b.WriteString("pod 有多个容器，请通过 --container 指定（name 或 index）：\n")
-		for i, c := range containers {
-			b.WriteString(fmt.Sprintf("  %d: %s (image=%s)\n", i, c.Name, c.Image))
+		b.WriteString("pod 有多个容器，请通过 --container-image 指定（容器名、索引或部分镜像名）：\n")
+		for i, c := range allContainers {
+			containerType := "container"
+			if i < len(pod.Spec.InitContainers) {
+				containerType = "init-container"
+			}
+			b.WriteString(fmt.Sprintf("  %s[%d]: %s (image=%s)\n", containerType, i, c.Name, c.Image))
 		}
 		return "", errors.New(b.String())
 	}
 	if idx, err := strconv.Atoi(containerSel); err == nil {
-		if idx < 0 || idx >= len(containers) {
-			return "", fmt.Errorf("container index 超出范围: %d", idx)
+		if idx < 0 || idx >= len(allContainers) {
+			return "", fmt.Errorf("容器索引超出范围: %d（总容器数: %d）", idx, len(allContainers))
 		}
-		return containers[idx].Image, nil
+		return allContainers[idx].Image, nil
 	}
-	for _, c := range containers {
+	for _, c := range allContainers {
 		if c.Name == containerSel {
 			return c.Image, nil
 		}
 	}
-	for _, c := range containers {
+	for _, c := range allContainers {
 		if strings.Contains(c.Image, containerSel) {
 			return c.Image, nil
 		}
 	}
-	return "", fmt.Errorf("找不到匹配的容器 '%s'（请传容器名或索引）", containerSel)
+	return "", fmt.Errorf("找不到匹配的容器 '%s'（请传容器名、索引或部分镜像名）", containerSel)
 }
 
 func escapeSingle(s string) string {
