@@ -34,7 +34,7 @@ kubectl spade --help
 ```bash
 git clone <repository-url>
 cd kubectl-spade
-go build -o kubectl-spade
+CGO_ENABLED=0 go build -o kubectl-spade .
 sudo mv kubectl-spade /usr/local/bin/
 ```
 
